@@ -1,7 +1,14 @@
 # Multi-Company AI Voice Agent Bridge
 
 **Role:** Lead Developer & Systems Architect  
-**Tech Stack:** Python 3.12, FastAPI, Google Gemini Multimodal Live API, Twilio Voice/Media Streams, n8n, Baserow, Google Calendar
+**Tech Stack:** Python 3.12, FastAPI, Google Gemini Multimodal Live API, Twilio Voice/Media Streams, n8n, Baserow, Google Calendar, Gmail, Twilio SMS
+
+**Files:**
+- `Solar-Voice-Agent-Bridge.json` — Sanitized n8n workflow export (3 webhooks, 22 nodes)
+- `main.py` — FastAPI server bridging Twilio ↔ Gemini Live (see note below)
+- `requirements.txt`, `Dockerfile` — Deployment artifacts
+
+> **Note:** The `main.py`, `requirements.txt`, and `Dockerfile` files were removed from this showcase to comply with NDA restrictions. They are replaced by the `Solar-Voice-Agent-Bridge.json` n8n workflow file. The full FastAPI server (1459 lines) handled: WebSocket audio streaming, mulaw↔PCM codec conversion, VAD/barge-in, Gemini function calling, identity prefetch with timeout, auto-hangup, and call duration watchdog. The architecture is documented below.
 
 ## What It Does
 

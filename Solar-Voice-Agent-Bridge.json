@@ -1,0 +1,321 @@
+{
+  "_note": "NDA-SANITIZED: Credentials removed, URLs/emails/phone-numbers replaced with [REDACTED], JS code summarized. Node structure and connections are accurate.",
+  "name": "[REDACTED] Voice Agent Bridge",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "company-identity",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook - Company Identity",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "databaseId": "[REDACTED]",
+        "tableId": "[REDACTED]",
+        "returnAll": true
+      },
+      "name": "Baserow - Get Companies",
+      "type": "n8n-nodes-base.baserow",
+      "typeVersion": 1.1,
+      "position": [224, 0],
+      "credentials": "[REDACTED - Baserow account]"
+    },
+    {
+      "parameters": {
+        "jsCode": "// [NDA SUMMARY] Matches the incoming phone number against active companies in Baserow.\n// Normalizes phone numbers (strip non-digits), finds exact match, checks Active=true flag.\n// Returns company config: name, agent_name, calendar_id, timezone, email.\nconst phone = String($input.first().json.body.phone_number).trim();\nconst rows = $input.all().map(item => item.json);\nconst normalize = (v) => String(v || '').replace(/[^0-9+]/g, '');\nconst wanted = normalize(phone);\nconst found = rows.filter(r => normalize(r['Twilio Number']) === wanted)\n                  .find(r => r['Active'] === true);\nif (!found) return [{ json: { identity_found: false } }];\nreturn [{ json: { identity_found: true, company_name: found['Company Name'], agent_name: found['Agent Name'], /* ... */ } }];"
+      },
+      "name": "Code - Match Company By Twilio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [448, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ identity_found: !!$json.identity_found, company_name: $json.company_name || \"\", agent_name: $json.agent_name || \"[REDACTED]\", /* ... */ }) }}"
+      },
+      "name": "Respond - Company Found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [672, 0]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "check-availability",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook - Check Availability",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 224]
+    },
+    {
+      "parameters": {
+        "jsCode": "// [NDA SUMMARY] Validates candidate time slots: must be on the hour, 8AM-4PM, exactly 1 hour.\n// Parses ISO-8601 datetimes, filters valid slots, passes to Google Calendar for checking.\nconst slots = (body.slots || []).filter(s => {\n  const h = new Date(s.start).getHours();\n  return h >= 8 && h <= 16 && s.start.endsWith(':00');\n});\nreturn slots.map((s, i) => ({ json: { slot_label: s.label, start_iso: s.start, end_iso: s.end } }));"
+      },
+      "name": "Code - Expand Requested Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [224, 224]
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendar": { "__rl": true, "mode": "id", "value": "={{ $json.calendar_id || \"primary\" }}" },
+        "timeMin": "={{ $json.start_iso }}",
+        "timeMax": "={{ $json.end_iso }}",
+        "options": { "outputFormat": "availability" }
+      },
+      "name": "Google Calendar - Check Candidate Slot",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [448, 224],
+      "credentials": "[REDACTED - Google Calendar OAuth]"
+    },
+    {
+      "parameters": {
+        "jsCode": "// [NDA SUMMARY] Collects available slots from Google Calendar responses.\n// Filters to available=true, sorts by slot index, returns compact slot list.\nconst available = $input.all().filter(i => i.json.available)\n  .sort((a, b) => (a.json.slot_index || 0) - (b.json.slot_index || 0));\nconst labels = available.map(i => i.json.slot_label).filter(Boolean);\nreturn [{ json: { available: labels.length > 0, slots: labels } }];"
+      },
+      "name": "Code - Collect Available Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [672, 224]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ available: $json.available, slots: $json.slots || [] }) }}"
+      },
+      "name": "Respond - Available Slots",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [896, 224]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "book-appointment",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook - Book Appointment",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 640]
+    },
+    {
+      "parameters": {
+        "jsCode": "// [NDA SUMMARY] Validates booking request: required fields present, email valid,\n// datetime is valid ISO-8601, on the hour, between 8AM-4PM local time.\n// Returns validation_ok=true/false with error messages for AI to relay.\nconst body = $input.first().json.body || {};\nconst preferred = String(body.preferred_datetime || '').trim();\n// ... validation logic (hour check, ISO parse, business hours) ...\nreturn [{ json: { ...body, validation_ok: true, start_iso: /* ... */, end_iso: /* ... */ } }];"
+      },
+      "name": "Code - Validate Booking Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [224, 640]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.validation_ok ? 0 : 1 }}"
+      },
+      "name": "Switch - Booking Valid?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [448, 640]
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendar": { "__rl": true, "mode": "id", "value": "={{ $json.calendar_id || \"primary\" }}" },
+        "timeMin": "={{ $json.start_iso }}",
+        "timeMax": "={{ $json.end_iso }}",
+        "options": { "outputFormat": "availability" }
+      },
+      "name": "Google Calendar - Double-Check Availability",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [672, 544],
+      "credentials": "[REDACTED - Google Calendar OAuth]"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.available ? 0 : 1 }}"
+      },
+      "name": "Switch - Slot Available?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [896, 544]
+    },
+    {
+      "parameters": {
+        "calendar": { "__rl": true, "mode": "id", "value": "={{ ...calendar_id }}" },
+        "start": "={{ ...start_iso }}",
+        "end": "={{ ...end_iso }}",
+        "additionalFields": {
+          "description": "=[NDA] Appointment booked via AI Voice Agent - includes caller name, email, phone, address, notes, company",
+          "location": "Phone / Virtual",
+          "sendUpdates": "all",
+          "summary": "=[NDA] Consultation - Caller Name"
+        }
+      },
+      "name": "Google Calendar - Create Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [1120, 448],
+      "credentials": "[REDACTED - Google Calendar OAuth]"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "databaseId": "[REDACTED]",
+        "tableId": "[REDACTED]",
+        "fieldsUi": {
+          "_note": "[NDA] Maps 18 fields: Homeowner Name, Pending Key, Company Name, Call ID, Phone, Email, Address, Status=Booked, Qualified, DateTime, Summary, Email Collection Method, Twilio Number, Calendar ID, Timezone, Agent Name"
+        }
+      },
+      "name": "Baserow - Create Appointment Row",
+      "type": "n8n-nodes-base.baserow",
+      "typeVersion": 1.1,
+      "position": [1344, 448],
+      "credentials": "[REDACTED - Baserow account]"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ caller_email }}",
+        "subject": "=[NDA] Appointment Confirmed - Company Name",
+        "message": "=[NDA] HTML confirmation email with: caller name, company name, appointment date/time in local timezone, closing"
+      },
+      "name": "Gmail - Send Confirmation",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [1568, 448],
+      "credentials": "[REDACTED - Gmail OAuth]"
+    },
+    {
+      "parameters": {
+        "jsCode": "// [NDA SUMMARY] Sanitizes phone number for Twilio SMS (E.164 format: +1XXXXXXXXXX)\nfor (const item of $input.all()) {\n  let phone = String(item.json['Homeowner Phone'] || '').replace(/\\D/g, '');\n  if (phone.length === 10) phone = '1' + phone;\n  item.json.sanitized_phone = '+' + phone;\n}\nreturn $input.all();"
+      },
+      "name": "Code - Sanitize Phone",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1792, 448]
+    },
+    {
+      "parameters": {
+        "from": "={{ $json['Twilio Number'] }}",
+        "to": "={{ $json.sanitized_phone }}",
+        "message": "=[NDA] Hi {{name}}, your appointment with {{company}} is confirmed for {{datetime}}. Reply to reschedule. Reply STOP to opt out."
+      },
+      "name": "Twilio - Send SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [2016, 448],
+      "credentials": "[REDACTED - Twilio account]"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"success\", message: \"Appointment booked and confirmation sent.\", event_id: \"...\" }) }}"
+      },
+      "name": "Respond - Booking Confirmed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [2240, 448]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"conflict\", slot_available: false, retryable: true, message: \"That time is no longer available.\" }) }}",
+        "options": { "responseCode": 409 }
+      },
+      "name": "Respond - Slot Conflict",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [1120, 640]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"error\", message: $json.error_message || \"Invalid booking request.\" }) }}",
+        "options": { "responseCode": 400 }
+      },
+      "name": "Respond - Invalid Booking",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [672, 736]
+    }
+  ],
+  "connections": {
+    "_note": "[NDA] Connection structure preserved. Each node's output connects to the next node's input.",
+    "Webhook - Company Identity": {
+      "main": [[{ "node": "Baserow - Get Companies", "type": "main", "index": 0 }]]
+    },
+    "Baserow - Get Companies": {
+      "main": [[{ "node": "Code - Match Company By Twilio", "type": "main", "index": 0 }]]
+    },
+    "Code - Match Company By Twilio": {
+      "main": [[{ "node": "Respond - Company Found", "type": "main", "index": 0 }]]
+    },
+    "Webhook - Check Availability": {
+      "main": [[{ "node": "Code - Expand Requested Slots", "type": "main", "index": 0 }]]
+    },
+    "Code - Expand Requested Slots": {
+      "main": [[{ "node": "Google Calendar - Check Candidate Slot", "type": "main", "index": 0 }]]
+    },
+    "Google Calendar - Check Candidate Slot": {
+      "main": [[{ "node": "Code - Collect Available Slots", "type": "main", "index": 0 }]]
+    },
+    "Code - Collect Available Slots": {
+      "main": [[{ "node": "Respond - Available Slots", "type": "main", "index": 0 }]]
+    },
+    "Webhook - Book Appointment": {
+      "main": [[{ "node": "Code - Validate Booking Request", "type": "main", "index": 0 }]]
+    },
+    "Code - Validate Booking Request": {
+      "main": [[{ "node": "Switch - Booking Valid?", "type": "main", "index": 0 }]]
+    },
+    "Switch - Booking Valid?": {
+      "main": [
+        [{ "node": "Google Calendar - Double-Check Availability", "type": "main", "index": 0 }],
+        [{ "node": "Respond - Invalid Booking", "type": "main", "index": 0 }]
+      ]
+    },
+    "Google Calendar - Double-Check Availability": {
+      "main": [[{ "node": "Switch - Slot Available?", "type": "main", "index": 0 }]]
+    },
+    "Switch - Slot Available?": {
+      "main": [
+        [{ "node": "Google Calendar - Create Event", "type": "main", "index": 0 }],
+        [{ "node": "Respond - Slot Conflict", "type": "main", "index": 0 }]
+      ]
+    },
+    "Google Calendar - Create Event": {
+      "main": [[{ "node": "Baserow - Create Appointment Row", "type": "main", "index": 0 }]]
+    },
+    "Baserow - Create Appointment Row": {
+      "main": [[{ "node": "Gmail - Send Confirmation", "type": "main", "index": 0 }]]
+    },
+    "Gmail - Send Confirmation": {
+      "main": [[{ "node": "Code - Sanitize Phone", "type": "main", "index": 0 }]]
+    },
+    "Code - Sanitize Phone": {
+      "main": [[{ "node": "Twilio - Send SMS", "type": "main", "index": 0 }]]
+    },
+    "Twilio - Send SMS": {
+      "main": [[{ "node": "Respond - Booking Confirmed", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [{ "name": "[REDACTED] Voice Agent" }],
+  "description": "3-webhook n8n workflow: company identity lookup via Baserow, Google Calendar availability checking, and appointment booking with Gmail + SMS confirmation. Powers the AI voice agent bridge."
+}
