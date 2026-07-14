@@ -73,10 +73,3 @@ Twilio Media Stream (mulaw/8kHz) ←WebSocket→ FastAPI ←WebSocket→ Gemini 
 - Certain business-specific qualification criteria and pricing rules have been generalized
 
 The architecture, audio pipeline, tool-calling pattern, VAD implementation, and system prompt structure remain structurally accurate representations of the production system.
-
-## Relevance to Application Questions
-
-- **Q12 (AI/automation systems I built):** This is a production AI voice agent handling real customer calls
-- **Q13 (Multi-step LLM agent workflow):** Perfect example — Gemini Live model with 3 function declarations, real-time audio, multi-company identity resolution, calendar integration, and database persistence across 4+ n8n webhooks
-- **Q14 (Internal knowledge system):** The 15 Q&A pairs form a curated knowledge base injected into the system prompt, grounding the AI's responses in verified information
-- **Q15 (AI producing wrong answers):** The classifier sometimes misclassified companies based on domain name alone. Solution: implemented a 3-stage pipeline (keyword → scrape → LLM fallback) and added a "classifier_reason" field to track why each classification was made, enabling audit trails and prompt refinement
